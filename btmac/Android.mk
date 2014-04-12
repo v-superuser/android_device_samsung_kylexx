@@ -29,9 +29,9 @@ LOCAL_SRC_FILES := \
 LOCAL_SHARED_LIBRARIES := libc libcutils liblog
 
 # Proprietary
-LOCAL_SHARED_LIBRARIES += liboncrpc
-$(shell mkdir -p $(OUT)/obj/SHARED_LIBRARIES/liboncrpc_intermediates/)
-$(shell touch $(OUT)/obj/SHARED_LIBRARIES/liboncrpc_intermediates/export_includes)
+# LOCAL_SHARED_LIBRARIES += liboncrpc
+# $(shell mkdir -p $(OUT)/obj/SHARED_LIBRARIES/liboncrpc_intermediates/)
+# $(shell touch $(OUT)/obj/SHARED_LIBRARIES/liboncrpc_intermediates/export_includes)
 
 LOCAL_SHARED_LIBRARIES += libnv
 $(shell mkdir -p $(OUT)/obj/SHARED_LIBRARIES/libnv_intermediates/)
