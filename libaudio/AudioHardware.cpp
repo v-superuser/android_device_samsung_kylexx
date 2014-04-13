@@ -31,7 +31,7 @@
 #include <cutils/properties.h> // for property_get
 
 // hardware specific functions
-
+#include <media/AudioSystem.h>
 #include "AudioHardware.h"
 #ifdef QCOM_FM_ENABLED
 extern "C" {
@@ -40,6 +40,9 @@ extern "C" {
 #endif
 //#include <media/AudioRecord.h>
 
+#ifdef WITH_QCOM_VOIP_OVER_MVS
+#include <linux/msm_audio_mvs.h>
+#endif
 
 #define COMBO_DEVICE_SUPPORTED // Headset speaker combo device not supported on this target
 #define DUALMIC_KEY "dualmic_enabled"
@@ -108,6 +111,8 @@ static struct tx_agc tx_agc_cfg[9];
 static int enable_preproc_mask[9];
 
 static int snd_device = -1;
+static int alt_enable = 0;
+static int hac_enable = 0;
 
 #define PCM_OUT_DEVICE "/dev/msm_pcm_out"
 #define PCM_IN_DEVICE "/dev/msm_pcm_in"
@@ -129,6 +134,7 @@ static uint32_t SND_DEVICE_BT=-1;
 static uint32_t SND_DEVICE_BT_EC_OFF=-1;
 static uint32_t SND_DEVICE_HEADSET=-1;
 static uint32_t SND_DEVICE_STEREO_HEADSET_AND_SPEAKER=-1;
+static uint32_t SND_DEVICE_HEADSET_AND_SPEAKER=-1;
 static uint32_t SND_DEVICE_IN_S_SADC_OUT_HANDSET=-1;
 static uint32_t SND_DEVICE_IN_S_SADC_OUT_SPEAKER_PHONE=-1;
 static uint32_t SND_DEVICE_TTY_HEADSET=-1;
@@ -138,6 +144,7 @@ static uint32_t SND_DEVICE_CARKIT=-1;
 static uint32_t SND_DEVICE_FM_SPEAKER=-1;
 static uint32_t SND_DEVICE_FM_HEADSET=-1;
 static uint32_t SND_DEVICE_NO_MIC_HEADSET=-1;
+static uint32_t SND_DEVICE_STEREO_HEADSET=-1;
 static uint32_t SND_DEVICE_FM_DIGITAL_STEREO_HEADSET=-1;
 static uint32_t SND_DEVICE_FM_DIGITAL_SPEAKER_PHONE=-1;
 static uint32_t SND_DEVICE_FM_DIGITAL_BT_A2DP_HEADSET=-1;
@@ -160,6 +167,35 @@ mDirectOutrefCnt(0)
            audpp_filter_inited = true;
    }
 
+  int (*set_acoustic_parameters)();
+  
+    acoustic = ::dlopen("/system/lib/libhtc_acoustic.so", RTLD_NOW);
+    if (acoustic == NULL ) {
+        ALOGE("Could not open libhtc_acoustic.so");
+    }
+
+    set_acoustic_parameters = (int (*)(void))::dlsym(acoustic, "set_acoustic_parameters");
+    if ((*set_acoustic_parameters) == 0 ) {
+        ALOGE("Could not open set_acoustic_parameters()");
+        return;
+    }
+
+    int rc = set_acoustic_parameters();
+    if (rc < 0) {
+        ALOGD("Could not set acoustic parameters to share memory: %d", rc);
+    }
+
+    char value[PROPERTY_VALUE_MAX];
+    /* Check the system property for enable or not the ALT function */
+    property_get("htc.audio.alt.enable", value, "0");
+    alt_enable = atoi(value);
+    ALOGV("Enable ALT function: %d", alt_enable);
+
+    /* Check the system property for enable or not the HAC function */
+    property_get("htc.audio.hac.enable", value, "0");
+    hac_enable = atoi(value);
+    ALOGV("Enable HAC function: %d", hac_enable);
+
     m7xsnddriverfd = open("/dev/msm_snd", O_RDWR);
     if (m7xsnddriverfd >= 0) {
         int rc = ioctl(m7xsnddriverfd, SND_GET_NUM_ENDPOINTS, &mNumSndEndpoints);
@@ -177,8 +213,12 @@ mDirectOutrefCnt(0)
                 CHECK_FOR(HANDSET);
                 CHECK_FOR(SPEAKER);
                 CHECK_FOR(BT);
+                CHECK_FOR(CARKIT);
                 CHECK_FOR(BT_EC_OFF);
                 CHECK_FOR(HEADSET);
+                CHECK_FOR(NO_MIC_HEADSET);
+                CHECK_FOR(STEREO_HEADSET);
+                CHECK_FOR(HEADSET_AND_SPEAKER);
                 CHECK_FOR(STEREO_HEADSET_AND_SPEAKER);
                 CHECK_FOR(IN_S_SADC_OUT_HANDSET);
                 CHECK_FOR(IN_S_SADC_OUT_SPEAKER_PHONE);
@@ -332,6 +372,7 @@ AudioStreamOut* AudioHardware::openOutputStream(uint32_t devices, int *format, u
                 return 0;
             }
 #endif
+
             // create new output LPA stream
             AudioSessionOutLPA* out = new AudioSessionOutLPA(this, devices, *format, *channels,*sampleRate,0,&err);
             if(err != NO_ERROR) {
@@ -344,7 +385,7 @@ AudioStreamOut* AudioHardware::openOutputStream(uint32_t devices, int *format, u
 
         } else {
 #if 0
-            ALOGV(" AudioHardware::openOutputStream AudioStreamOutMSM8x60 output stream \n");
+            ALOGV(" AudioHardware::openOutputStream AudioStreamOutMSM72xx output stream \n");
             // only one output stream allowed
             if (mOutput) {
                 if (status) {
@@ -354,6 +395,7 @@ AudioStreamOut* AudioHardware::openOutputStream(uint32_t devices, int *format, u
                 return 0;
             }
 #endif
+
             // create new output stream
             AudioStreamOutMSM72xx* out = new AudioStreamOutMSM72xx();
             lStatus = out->set(this, devices, format, channels, sampleRate);
@@ -419,7 +461,7 @@ AudioStreamIn* AudioHardware::openInputStream(
 
     mLock.lock();
 #ifdef QCOM_VOIP_ENABLED
-    if((devices == AudioSystem::DEVICE_IN_COMMUNICATION) && (*sampleRate == 8000)) {
+    if(devices == AudioSystem::DEVICE_IN_COMMUNICATION) {
         ALOGV("Create Audio stream Voip \n");
         AudioStreamInVoip* inVoip = new AudioStreamInVoip();
         status_t lStatus = NO_ERROR;
@@ -674,7 +716,7 @@ status_t AudioHardware::setParameters(const String8& keyValuePairs)
 uint32_t AudioHardware::getMvsMode(int format, int rate)
 {
     switch(format) {
-    case AudioSystem::PCM_16_BIT:
+    case AUDIO_FORMAT_PCM_16_BIT:
         if(rate == AUDIO_HW_VOIP_SAMPLERATE_8K) {
             return MVS_MODE_PCM;
         } else if(rate== AUDIO_HW_VOIP_SAMPLERATE_16K) {
@@ -683,19 +725,19 @@ uint32_t AudioHardware::getMvsMode(int format, int rate)
             return MVS_MODE_PCM;
         }
         break;
-    case AudioSystem::AMR_NB:
+    case AUDIO_FORMAT_AMR_NB:
         return MVS_MODE_AMR;
         break;
-    case AudioSystem::AMR_WB:
+    case AUDIO_FORMAT_AMR_WB:
         return MVS_MODE_AMR_WB;
         break;
-    case AudioSystem::EVRC:
+    case AUDIO_FORMAT_EVRC:
         return   MVS_MODE_IS127;
         break;
-    case AudioSystem::EVRCB:
+    case AUDIO_FORMAT_EVRCB:
         return MVS_MODE_4GV_NB;
         break;
-    case AudioSystem::EVRCWB:
+    case AUDIO_FORMAT_EVRCWB:
         return MVS_MODE_4GV_WB;
         break;
     default:
@@ -1528,14 +1570,14 @@ size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format, int ch
 {
     ALOGD("AudioHardware::getInputBufferSize sampleRate %d format %d channelCount %d"
             ,sampleRate, format, channelCount);
-    if ( (format != AudioSystem::PCM_16_BIT) &&
-         (format != AudioSystem::AMR_NB)     &&
-         (format != AudioSystem::AMR_WB)     &&
-         (format != AudioSystem::EVRC)       &&
-         (format != AudioSystem::EVRCB)      &&
-         (format != AudioSystem::EVRCWB)     &&
-         (format != AudioSystem::QCELP)      &&
-         (format != AudioSystem::AAC)){
+    if ( (format != AUDIO_FORMAT_PCM_16_BIT) &&
+         (format != AUDIO_FORMAT_AMR_NB)     &&
+         (format != AUDIO_FORMAT_AMR_WB)     &&
+         (format != AUDIO_FORMAT_EVRC)       &&
+         (format != AUDIO_FORMAT_EVRCB)      &&
+         (format != AUDIO_FORMAT_EVRCWB)     &&
+         (format != AUDIO_FORMAT_QCELP)      &&
+         (format != AUDIO_FORMAT_AAC)){
         ALOGW("getInputBufferSize bad format: 0x%x", format);
         return 0;
     }
@@ -1544,13 +1586,13 @@ size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format, int ch
         return 0;
     }
 
-    if(format == AudioSystem::AMR_NB)
+    if(format == AUDIO_FORMAT_AMR_NB)
        return 320*channelCount;
-    else if (format == AudioSystem::EVRC)
+    else if (format == AUDIO_FORMAT_EVRC)
        return 230*channelCount;
-    else if (format == AudioSystem::QCELP)
+    else if (format == AUDIO_FORMAT_QCELP)
        return 350*channelCount;
-    else if (format == AudioSystem::AAC)
+    else if (format == AUDIO_FORMAT_AAC)
        return 2048;
 #ifdef QCOM_VOIP_ENABLED
     else if (sampleRate == AUDIO_HW_VOIP_SAMPLERATE_8K)
@@ -1606,13 +1648,10 @@ status_t AudioHardware::setVoiceVolume(float v)
         ALOGW("setVoiceVolume(%f) over 1.0, assuming 1.0\n", v);
         v = 1.0;
     }
-    // Added 0.4 to current volume, as in voice call Mute cannot be set as minimum volume(0.00)
-    // setting Rx volume level as 2 for minimum and 7 as max level.
-    v = 0.4 + v;
 
-    int vol = lrint(v * 5.0);
+    int vol = lrint(v * 7.0);
     ALOGD("setVoiceVolume(%f)\n", v);
-    ALOGI("Setting in-call volume to %d (available range is 2 to 7)\n", vol);
+    ALOGI("Setting in-call volume to %d (available range is 0 to 7)\n", vol);
 
     if ((mCurSndDevice != -1) && ((mCurSndDevice == SND_DEVICE_TTY_HEADSET) || (mCurSndDevice == SND_DEVICE_TTY_VCO)))
     {
@@ -1655,6 +1694,8 @@ status_t AudioHardware::setMasterVolume(float v)
     set_volume_rpc(SND_DEVICE_SPEAKER, SND_METHOD_VOICE, vol, m7xsnddriverfd);
     set_volume_rpc(SND_DEVICE_BT,      SND_METHOD_VOICE, vol, m7xsnddriverfd);
     set_volume_rpc(SND_DEVICE_HEADSET, SND_METHOD_VOICE, vol, m7xsnddriverfd);
+    set_volume_rpc(SND_DEVICE_NO_MIC_HEADSET, SND_METHOD_VOICE, vol, m7xsnddriverfd);
+    set_volume_rpc(SND_DEVICE_STEREO_HEADSET, SND_METHOD_VOICE, vol, m7xsnddriverfd);
     set_volume_rpc(SND_DEVICE_IN_S_SADC_OUT_HANDSET, SND_METHOD_VOICE, vol, m7xsnddriverfd);
     set_volume_rpc(SND_DEVICE_IN_S_SADC_OUT_SPEAKER_PHONE, SND_METHOD_VOICE, vol, m7xsnddriverfd);
     set_volume_rpc(SND_DEVICE_TTY_HEADSET, SND_METHOD_VOICE, 1, m7xsnddriverfd);
@@ -1718,7 +1759,7 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
 {
     int rc;
     int nEarmute=true;
-#if 0
+
     if (device == (uint32_t)SND_DEVICE_BT || device == (uint32_t)SND_DEVICE_CARKIT) {
         if (mBluetoothId) {
             device = mBluetoothId;
@@ -1726,7 +1767,7 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
             device = SND_DEVICE_BT_EC_OFF;
         }
     }
-#endif
+
 #ifdef QCOM_FM_ENABLED
     if(IsFmon()){
         /* FM needs both Rx path and Tx path to be unmuted */
@@ -1766,6 +1807,7 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
 #ifdef QCOM_FM_ENABLED
 bool AudioHardware::isFMAnalog()
 {
+    char value[PROPERTY_VALUE_MAX];
     bool isAfm = false;
 
     if (property_get("hw.fm.isAnalog", value, NULL)
@@ -1778,7 +1820,6 @@ bool AudioHardware::isFMAnalog()
 #endif
 status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input, int outputDevice)
 {
-    char value[PROPERTY_VALUE_MAX];
     /* currently this code doesn't work without the htc libacoustic */
 
     Mutex::Autolock lock(mLock);
@@ -1855,18 +1896,6 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input, int outputDevice)
                 ALOGI("Routing audio to TTY HCO Mode\n");
                 new_snd_device = SND_DEVICE_TTY_HCO;
             }
-#ifdef COMBO_DEVICE_SUPPORTED
-        } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
-                   (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
-            ALOGI("Routing audio to Wired Headset and Speaker\n");
-            new_snd_device = SND_DEVICE_STEREO_HEADSET_AND_SPEAKER;
-            new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
-        } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) &&
-                   (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
-            ALOGI("Routing audio to No microphone Wired Headset and Speaker (%d,%x)\n", mMode, outputDevices);
-            new_snd_device = SND_DEVICE_STEREO_HEADSET_AND_SPEAKER;
-            new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
-#endif
 #ifdef QCOM_FM_ENABLED
         } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
                    (outputDevices & AudioSystem::DEVICE_OUT_FM)) {
@@ -1898,13 +1927,29 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input, int outputDevice)
         } else if (outputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
             ALOGI("Routing audio to Bluetooth PCM\n");
             new_snd_device = SND_DEVICE_CARKIT;
+#ifdef COMBO_DEVICE_SUPPORTED
+        } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
+                   (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
+            ALOGI("Routing audio to Wired Headset and Speaker\n");
+            new_snd_device = SND_DEVICE_STEREO_HEADSET_AND_SPEAKER;
+            new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
+        } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
+            if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
+                ALOGI("Routing audio to No microphone Wired Headset and Speaker (%d,%x)\n", mMode, outputDevices);
+                new_snd_device = SND_DEVICE_STEREO_HEADSET_AND_SPEAKER;
+                new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
+            } else {
+                ALOGI("Routing audio to No microphone Wired Headset (%d,%x)\n", mMode, outputDevices);
+                new_snd_device = SND_DEVICE_NO_MIC_HEADSET;
+            }
+#endif
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) {
             ALOGI("Routing audio to Wired Headset\n");
             new_snd_device = SND_DEVICE_HEADSET;
             new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
-            ALOGI("Routing audio to Wired Headphone\n");
-            new_snd_device = SND_DEVICE_HEADSET;
+            ALOGI("Routing audio to No microphone Wired Headset (%d,%x)\n", mMode, outputDevices);
+            new_snd_device = SND_DEVICE_NO_MIC_HEADSET;
             new_post_proc_feature_mask = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE | MBADRC_ENABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
             ALOGI("Routing audio to Speakerphone\n");
@@ -2137,7 +2182,7 @@ status_t AudioHardware::AudioStreamInVoip::set(
         return BAD_VALUE;
     }
 
-    if (*pFormat == AudioSystem::PCM_16_BIT){
+    if (*pFormat == AUDIO_FORMAT_PCM_16_BIT){
     if (pRate == 0) {
         return BAD_VALUE;
     }
@@ -2297,7 +2342,7 @@ ssize_t AudioHardware::AudioStreamInVoip::read( void* buffer, ssize_t bytes)
     }
     struct msm_audio_mvs_frame audio_mvs_frame;
     memset(&audio_mvs_frame, 0, sizeof(audio_mvs_frame));
-    if(mFormat == AudioSystem::PCM_16_BIT) {
+    if(mFormat == AUDIO_FORMAT_PCM_16_BIT) {
     audio_mvs_frame.frame_type = 0;
        while (count >= mBufferSize) {
            audio_mvs_frame.len = mBufferSize;
@@ -2459,6 +2504,7 @@ status_t AudioHardware::AudioStreamOutMSM72xx::set(
     uint32_t lChannels = pChannels ? *pChannels : 0;
     uint32_t lRate = pRate ? *pRate : 0;
 
+    ALOGE("set1 lFormat = %d lChannels= %u lRate = %u\n", lFormat, lChannels, lRate );
     mHardware = hw;
 
     // fix up defaults
@@ -2991,10 +3037,10 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
 
     if ((pFormat == 0) ||
         ((*pFormat != AUDIO_HW_IN_FORMAT) &&
-         (*pFormat != AudioSystem::AMR_NB) &&
-         (*pFormat != AudioSystem::EVRC) &&
-         (*pFormat != AudioSystem::QCELP) &&
-         (*pFormat != AudioSystem::AAC)))
+         (*pFormat != AUDIO_FORMAT_AMR_NB) &&
+         (*pFormat != AUDIO_FORMAT_EVRC) &&
+         (*pFormat != AUDIO_FORMAT_QCELP) &&
+         (*pFormat != AUDIO_FORMAT_AAC)))
     {
         *pFormat = AUDIO_HW_IN_FORMAT;
         ALOGE("audio format bad value");
@@ -3084,9 +3130,9 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
     mSampleRate = config.sample_rate;
     mBufferSize = config.buffer_size;
     }
-    else if( (*pFormat == AudioSystem::AMR_NB) ||
-             (*pFormat == AudioSystem::EVRC) ||
-             (*pFormat == AudioSystem::QCELP))
+    else if( (*pFormat == AUDIO_FORMAT_AMR_NB) ||
+             (*pFormat == AUDIO_FORMAT_EVRC) ||
+             (*pFormat == AUDIO_FORMAT_QCELP))
            {
 
       // open vocie memo input device
@@ -3136,38 +3182,38 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
 
       switch (*pFormat)
       {
-        case AudioSystem::AMR_NB:
+        case AUDIO_FORMAT_AMR_NB:
         {
           ALOGI("Recording Format: AMR_NB");
           gcfg.capability = RPC_VOC_CAP_AMR; // RPC_VOC_CAP_AMR (64)
           gcfg.max_rate = RPC_VOC_AMR_RATE_1220; // Max rate (Fixed frame)
           gcfg.min_rate = RPC_VOC_AMR_RATE_1220; // Min rate (Fixed frame length)
           gcfg.frame_format = RPC_VOC_PB_AMR; // RPC_VOC_PB_AMR
-          mFormat = AudioSystem::AMR_NB;
+          mFormat = AUDIO_FORMAT_AMR_NB;
           mBufferSize = 320;
           break;
         }
 
-        case AudioSystem::EVRC:
+        case AUDIO_FORMAT_EVRC:
         {
           ALOGI("Recording Format: EVRC");
           gcfg.capability = RPC_VOC_CAP_IS127;
           gcfg.max_rate = RPC_VOC_1_RATE; // Max rate (Fixed frame)
           gcfg.min_rate = RPC_VOC_1_RATE; // Min rate (Fixed frame length)
           gcfg.frame_format = RPC_VOC_PB_NATIVE_QCP;
-          mFormat = AudioSystem::EVRC;
+          mFormat = AUDIO_FORMAT_EVRC;
           mBufferSize = 230;
           break;
         }
 
-        case AudioSystem::QCELP:
+        case AUDIO_FORMAT_QCELP:
         {
           ALOGI("Recording Format: QCELP");
           gcfg.capability = RPC_VOC_CAP_IS733; // RPC_VOC_CAP_AMR (64)
           gcfg.max_rate = RPC_VOC_1_RATE; // Max rate (Fixed frame)
           gcfg.min_rate = RPC_VOC_1_RATE; // Min rate (Fixed frame length)
           gcfg.frame_format = RPC_VOC_PB_NATIVE_QCP;
-          mFormat = AudioSystem::QCELP;
+          mFormat = AUDIO_FORMAT_QCELP;
           mBufferSize = 350;
           break;
         }
@@ -3580,7 +3626,9 @@ status_t AudioHardware::AudioSessionOutLPA::openAudioSessionDevice( )
     } else {
         //initCheck = true;
         ALOGV("pcm_lp_dec: pcm_lp_dec Driver opened");
+#ifdef QCOM_TUNNEL_LPA_ENABLED
         lpa_playback_in_progress = true;
+#endif
     }
 
 	start();
@@ -4041,7 +4089,9 @@ void AudioHardware::AudioSessionOutLPA::reset()
     status_t status = NO_ERROR;
     bufferDeAlloc();
     ::close(afd);
+#ifdef QCOM_TUNNEL_LPA_ENABLED
     lpa_playback_in_progress = false;
+#endif
     ALOGD("AudioSessionOutLPA::reset() complete");
 }
 
@@ -4050,6 +4100,7 @@ status_t AudioHardware::AudioSessionOutLPA::getRenderPosition(uint32_t *dspFrame
     //TODO: enable when supported by driver
     return INVALID_OPERATION;
 }
+
 
 status_t AudioHardware::AudioSessionOutLPA::getBufferInfo(buf_info **buf) {
 
