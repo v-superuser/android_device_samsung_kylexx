@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 The Android Open Source Project
- * Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "audio.primary.msm7627a"
+#define LOG_TAG "audio.primary.msm7x27"
 //#define LOG_NDEBUG 0
 
 #include <stdint.h>
@@ -24,6 +24,7 @@
 #include <system/audio.h>
 #include <hardware/audio.h>
 
+#include "AudioHardware.h"
 #include <hardware_legacy/AudioHardwareInterface.h>
 #include <hardware_legacy/AudioSystemLegacy.h>
 
@@ -74,11 +75,13 @@ static uint32_t audio_device_conv_table[][HAL_API_REV_NUM] =
     { AudioSystem::DEVICE_OUT_AUX_DIGITAL, AUDIO_DEVICE_OUT_AUX_DIGITAL },
     { AudioSystem::DEVICE_OUT_ANLG_DOCK_HEADSET, AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET },
     { AudioSystem::DEVICE_OUT_DGTL_DOCK_HEADSET, AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET },
+    { AudioSystem::DEVICE_OUT_DEFAULT, AUDIO_DEVICE_OUT_DEFAULT },
 #ifdef QCOM_FM_ENABLED
     { AudioSystem::DEVICE_OUT_FM, AUDIO_DEVICE_OUT_FM },
+#endif
+#ifdef QCOM_FM_TX_ENABLED
     { AudioSystem::DEVICE_OUT_FM_TX, AUDIO_DEVICE_OUT_FM_TX },
 #endif
-    { AudioSystem::DEVICE_OUT_DEFAULT, AUDIO_DEVICE_OUT_DEFAULT },
     /* input devices */
     { AudioSystem::DEVICE_IN_COMMUNICATION, AUDIO_DEVICE_IN_COMMUNICATION },
     { AudioSystem::DEVICE_IN_AMBIENT, AUDIO_DEVICE_IN_AMBIENT },
@@ -88,11 +91,11 @@ static uint32_t audio_device_conv_table[][HAL_API_REV_NUM] =
     { AudioSystem::DEVICE_IN_AUX_DIGITAL, AUDIO_DEVICE_IN_AUX_DIGITAL },
     { AudioSystem::DEVICE_IN_VOICE_CALL, AUDIO_DEVICE_IN_VOICE_CALL },
     { AudioSystem::DEVICE_IN_BACK_MIC, AUDIO_DEVICE_IN_BACK_MIC },
+    { AudioSystem::DEVICE_IN_DEFAULT, AUDIO_DEVICE_IN_DEFAULT },
 #ifdef QCOM_FM_ENABLED
     { AudioSystem::DEVICE_IN_FM_RX, AUDIO_DEVICE_IN_FM_RX },
     { AudioSystem::DEVICE_IN_FM_RX_A2DP, AUDIO_DEVICE_IN_FM_RX_A2DP },
 #endif
-    { AudioSystem::DEVICE_IN_DEFAULT, AUDIO_DEVICE_IN_DEFAULT },
 };
 
 static uint32_t convert_audio_device(uint32_t from_device, int from_rev, int to_rev)
@@ -249,58 +252,6 @@ static int out_get_render_position(const struct audio_stream_out *stream,
     return out->qcom_out->getRenderPosition(dsp_frames);
 }
 
-static int out_set_observer(const struct audio_stream_out *stream,
-                                   void *observer)
-{
-    const struct qcom_stream_out *out =
-        reinterpret_cast<const struct qcom_stream_out *>(stream);
-    return out->qcom_out->setObserver(observer);
-}
-
-static int out_get_buffer_info(const struct audio_stream_out *stream,
-                                   buf_info ** buf)
-{
-    const struct qcom_stream_out *out =
-        reinterpret_cast<const struct qcom_stream_out *>(stream);
-    return out->qcom_out->getBufferInfo(buf);
-}
-
-static int out_is_buffer_available(const struct audio_stream_out *stream,
-                                   int *isAvail)
-{
-    const struct qcom_stream_out *out =
-        reinterpret_cast<const struct qcom_stream_out *>(stream);
-    return out->qcom_out->isBufferAvailable(isAvail);
-}
-
-static status_t out_start(struct audio_stream_out *stream)
-{
-    struct qcom_stream_out *out =
-        reinterpret_cast<struct qcom_stream_out *>(stream);
-    return out->qcom_out->start();
-}
-
-static status_t out_pause(struct audio_stream_out *stream)
-{
-    struct qcom_stream_out *out =
-        reinterpret_cast<struct qcom_stream_out *>(stream);
-    return out->qcom_out->pause();
-}
-
-static status_t out_flush(struct audio_stream_out *stream)
-{
-    struct qcom_stream_out *out =
-        reinterpret_cast<struct qcom_stream_out *>(stream);
-    return out->qcom_out->flush();
-}
-
-static status_t out_stop(struct audio_stream_out *stream)
-{
-    struct qcom_stream_out *out =
-        reinterpret_cast<struct qcom_stream_out *>(stream);
-    return out->qcom_out->stop();
-}
-
 static int out_add_audio_effect(const struct audio_stream *stream, effect_handle_t effect)
 {
     return 0;
@@ -314,9 +265,7 @@ static int out_remove_audio_effect(const struct audio_stream *stream, effect_han
 static int out_get_next_write_timestamp(const struct audio_stream_out *stream,
                                         int64_t *timestamp)
 {
-    const struct qcom_stream_out *out =
-        reinterpret_cast<const struct qcom_stream_out *>(stream);
-    return out->qcom_out->getNextWriteTimestamp(timestamp);
+    return -EINVAL;
 }
 
 /** audio_stream_in implementation **/
@@ -537,7 +486,6 @@ static size_t adev_get_input_buffer_size(const struct audio_hw_device *dev,
     return qadev->hwif->getInputBufferSize(config->sample_rate,config->format,channelCount);
 }
 
-
 static int adev_open_output_stream(struct audio_hw_device *dev,
                                    audio_io_handle_t handle,
                                    audio_devices_t devices,
@@ -583,13 +531,6 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->stream.write = out_write;
     out->stream.get_render_position = out_get_render_position;
     out->stream.get_next_write_timestamp = out_get_next_write_timestamp;
-    out->stream.start = out_start;
-    out->stream.pause = out_pause;
-    out->stream.flush = out_flush;
-    out->stream.stop = out_stop;
-    out->stream.set_observer = out_set_observer;
-    out->stream.get_buffer_info = out_get_buffer_info;
-    out->stream.is_buffer_available = out_is_buffer_available;
 
     *stream_out = &out->stream;
     return 0;
@@ -626,7 +567,7 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     if (!in)
         return -ENOMEM;
 
-    devices = convert_audio_device(devices, HAL_API_REV_2_0, HAL_API_REV_1_0);
+devices = convert_audio_device(devices, HAL_API_REV_2_0, HAL_API_REV_1_0);
     in->qcom_in = qadev->hwif->openInputStream(devices, (int *)&config->format,
                                     &config->channel_mask,
                                     &config->sample_rate,
@@ -761,7 +702,7 @@ struct qcom_audio_module HAL_MODULE_INFO_SYM = {
             hal_api_version: HARDWARE_HAL_API_VERSION,
             id: AUDIO_HARDWARE_MODULE_ID,
             name: "QCOM Audio HW HAL",
-            author: "The Linux Foundation",
+            author: "Code Aurora Forum",
             methods: &qcom_audio_module_methods,
             dso : NULL,
             reserved : {0},
@@ -771,4 +712,4 @@ struct qcom_audio_module HAL_MODULE_INFO_SYM = {
 
 }; // extern "C"
 
-}; // namespace android
+}; // namespace android_audio_legacy
