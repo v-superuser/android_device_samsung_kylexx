@@ -35,6 +35,9 @@ TARGET_BOARD_PLATFORM_GPU := qcom-adreno200
 TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
+# Memory
+BOARD_USES_PMEM_ADSP := true
+
 # Kernel
 TARGET_KERNEL_CONFIG := kylexx_defconfig
 TARGET_KERNEL_SOURCE := kernel/samsung/kylexx
@@ -98,6 +101,10 @@ WIFI_TEST_INTERFACE := "sta"
 WIFI_DRIVER_FW_PATH_STA := "sta"
 WIFI_DRIVER_FW_PATH_AP  := "ap"
 WIFI_DRIVER_FW_PATH_P2P := "p2p"
+
+## RIL
+BOARD_USES_LEGACY_RIL := true
+BOARD_RIL_CLASS := ../../../device/samsung/kylexx/ril/
 
 # Bluetooth
 BOARD_HAVE_BLUETOOTH := true
