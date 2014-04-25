@@ -116,4 +116,3 @@ on property:service.adb.root=1
     setprop sys.usb.config none
     sleep 1
     setprop sys.usb.config ${persist.sys.usb.config}
-
