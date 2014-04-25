@@ -14,7 +14,7 @@
 
 
 $(call inherit-product, build/target/product/full.mk)
-$(call inherit-product, vendor/samsung/kylexx/blobs.mk)
+$(call inherit-product-if-exists, vendor/samsung/kylexx/kylexx-vendor.mk)
 $(call inherit-product, device/common/gps/gps_eu_supl.mk)
 $(call inherit-product, frameworks/native/build/phone-hdpi-512-dalvik-heap.mk)
 DEVICE_PACKAGE_OVERLAYS += device/samsung/kylexx/overlay
