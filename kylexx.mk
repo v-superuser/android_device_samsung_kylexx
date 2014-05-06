@@ -100,7 +100,6 @@ PRODUCT_COPY_FILES += \
 
 ## Recovery
 PRODUCT_COPY_FILES += \
-    device/samsung/kylexx/recovery/sbin/rmt_storage_recovery:recovery/root/sbin/rmt_storage_recovery \
     device/samsung/kylexx/recovery/postrecoveryboot.sh:recovery/root/sbin/postrecoveryboot.sh \
     device/samsung/kylexx/recovery/postrecoveryboot.sh:recovery/system/bin/postrecoveryboot.sh
 

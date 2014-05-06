@@ -63,7 +63,7 @@ BOARD_USES_QCOM_HARDWARE := true
 COMMON_GLOBAL_CFLAGS += -DQCOM_HARDWARE
 
 # Graphics
-BOARD_EGL_CFG := device/samsung/kylexx/prebuilt/system/lib/egl/egl.cfg
+BOARD_EGL_CFG := device/samsung/kylexx/prebuilt/lib/egl/egl.cfg
 USE_OPENGL_RENDERER := true
 TARGET_QCOM_DISPLAY_VARIANT := legacy
 TARGET_NO_HW_VSYNC := true
@@ -103,7 +103,7 @@ WIFI_DRIVER_FW_PATH_AP  := "ap"
 WIFI_DRIVER_FW_PATH_P2P := "p2p"
 
 ## RIL
-BOARD_USES_LEGACY_RIL := true
+# BOARD_USES_LEGACY_RIL := true
 BOARD_RIL_CLASS := ../../../device/samsung/kylexx/ril/
 
 # Bluetooth
@@ -135,7 +135,7 @@ BOARD_BATTERY_DEVICE_NAME := "battery"
 
 # Recovery
 TARGET_RECOVERY_INITRC := device/samsung/kylexx/recovery/init.rc
-TARGET_RECOVERY_FSTAB := device/samsung/kylexx/ramdisk/fstab.qcom
+TARGET_RECOVERY_FSTAB := device/samsung/kylexx/rootdir/fstab.qcom
 BOARD_HAS_NO_SELECT_BUTTON := true
 BOARD_CUSTOM_RECOVERY_KEYMAPPING := ../../device/samsung/kylexx/recovery/recovery_keys.c
 TARGET_USE_CUSTOM_LUN_FILE_PATH := /sys/devices/platform/msm_hsusb/gadget/lun%d/file
