@@ -85,11 +85,11 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/handheld_core_hardware.xml:system/etc/permissions/handheld_core_hardware.xml
 
 ## Properties
-PRODUCT_PROPERTY_OVERRIDES += \
-    rild.libpath=/system/lib/libsec-ril.so \
-    rild.libargs=-d/dev/smd0 \
-    ro.telephony.ril.v3=datacall,icccardstatus,facilitylock \
-    ro.telephony.call_ring.multiple=false
+#PRODUCT_PROPERTY_OVERRIDES += \
+#    rild.libpath=/system/lib/libsec-ril.so \
+#    rild.libargs=-d/dev/smd0 \
+#    ro.telephony.ril.v3=datacall,icccardstatus,facilitylock \
+#    ro.telephony.call_ring.multiple=false
 
 # Recovery
 PRODUCT_COPY_FILES += \

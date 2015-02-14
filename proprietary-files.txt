@@ -79,6 +79,9 @@ lib/libmmparser.so
 lib/libqc-opt.so
 
 # RIL & misc
+bin/rild
+bin/sec-ril
+bin/qmiproxy
 bin/netmgrd
 bin/qmuxd
 bin/rmt_storage
@@ -105,9 +108,10 @@ lib/libqdp.so
 lib/libqmiservices.so
 lib/libqmi.so
 lib/libqueue.so
+lib/libril.so
 lib/libril-qc-1.so
-lib/libril-qc-qmi-1.so
 lib/libril-qcril-hook-oem.so
+lib/libsecnativefeature.so
 lib/libwms.so
 lib/libwmsts.so
 

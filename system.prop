@@ -23,11 +23,32 @@ com.qc.hardware=true
 ro.vendor.extension_library=/system/lib/libqc-opt.so
 
 # Telephony
+#rild.libpath=/system/lib/libril-qc-1.so
+#rild.libargs=-d /dev/smd0
+#ril.subscription.types=NV,RUIM
+#ro.telephony.call_ring.multiple=false
+#ro.telephony.call_ring.delay=3000
+
 rild.libpath=/system/lib/libril-qc-1.so
 rild.libargs=-d /dev/smd0
-ril.subscription.types=NV,RUIM
-ro.telephony.call_ring.multiple=false
-ro.telephony.call_ring.delay=3000
+persist.rild.nitz_plmn=
+persist.rild.nitz_long_ons_0=
+persist.rild.nitz_long_ons_1=
+persist.rild.nitz_long_ons_2=
+persist.rild.nitz_long_ons_3=
+persist.rild.nitz_short_ons_0=
+persist.rild.nitz_short_ons_1=
+persist.rild.nitz_short_ons_2=
+persist.rild.nitz_short_ons_3=
+ro.telephony.ril.v3=
+ro.telephony.call_ring.multiple=false 
+ril.subscription.types=NV,RUIM 
+ro.telephony.ril_class=KylexxRIL
+
+persist.dsds.enabled=true
+
+ro.ril.hsxpa=1
+ro.ril.gprsclass=10
 
 # USB
 persist.sys.usb.config=mtp,adb
